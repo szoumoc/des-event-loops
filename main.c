@@ -2,35 +2,120 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "event.h"
-#include "event_loop.h"
 
-/* Example handler used for a simple smoke test */
-char *example_handler(char *data) {
-    (void)data;
-    return "handler-result";
+typedef struct {
+    char key[64];
+    char data[256];
+    int is_async;
+} Event;
+
+typedef struct{
+    char key[64];
+    char result[256];
+} EventResult;
+
+typedef struct Node{
+    void *data;
+    struct Node *prev;
+    struct Node *next;
+} Node;
+
+typedef struct {
+    Node *head;
+    Node *tail;
+} Deque;
+
+void initDeque(Deque *deque) {
+    deque->head = NULL;
+    deque->tail = NULL;
+}
+void pushback(Deque *deque, void *data) {
+    Node *newNode = (Node *)malloc(sizeof(Node));
+    newNode->data = data;
+    newNode->prev = deque->tail;
+    newNode->next = NULL;
+
+    if (deque->tail) {
+        deque->tail->next = newNode;
+    } else {
+        deque->head = newNode;
+    }
+    deque->tail = newNode;
+}
+void pushfront(Deque *deque, void *data) {
+    Node *newNode = (Node *)malloc(sizeof(Node));
+    newNode->data = data;
+    newNode->prev = NULL;
+    newNode->next = deque->head;
+
+    if (deque->head) {
+        deque->head->prev = newNode;
+    } else {
+        deque->tail = newNode;
+    }
+    deque->head = newNode;
 }
 
-int main(void) {
-    EventLoop loop;
-    event_loop_init(&loop);
+void popfront(Deque *deque) {
+    if (deque->head) {
+        Node *temp = deque->head;
+        deque->head = deque->head->next;
+        if (deque->head) {
+            deque->head->prev = NULL;
+        } else {
+            deque->tail = NULL;
+        }
+        free(temp);
+    }
+}
+void popback(Deque *deque) {
+    if (deque->tail) {
+        Node *temp = deque->tail;
+        deque->tail = deque->tail->prev;
+        if (deque->tail) {
+            deque->tail->next = NULL;
+        } else {
+            deque->head = NULL;
+        }
+        free(temp);
+    }
+}
+void free(Deque *deque) {
+    while (deque->head) {
+        popfront(deque);
+    }
+}
 
-    /* register a handler */
-    handler_on(&loop.handlers, "test", example_handler);
+typedef char *(*handler_func)(char *);
 
-    /* create an event and dispatch */
-    Event *e = (Event *)malloc(sizeof(Event));
-    strncpy(e->key, "test", sizeof(e->key)-1);
-    e->key[sizeof(e->key)-1] = '\0';
-    strncpy(e->data, "payload", sizeof(e->data)-1);
-    e->data[sizeof(e->data)-1] = '\0';
-    e->is_async = 0;
+typedef struct {
+    char *key[64];
+    handler_func handlerfn;
+} HandlerEntry;
 
-    event_loop_dispatch(&loop, e);
-    event_loop_run(&loop);
+#define MAX_HANDLERS 100
+typedef struct {
+    HandlerEntry entries[MAX_HANDLERS];
+    int size;
+} HandlerMap;
 
-    /* cleanup */
-    free(e);
-    event_loop_free(&loop);
+typedef struct {
+    Deque events;
+    Deque processed_events;
+    HandlerMap handlers;
+} EventLoop;
+
+
+void on(EventLoop *loop, char *key, handler_func fn) {
+    strcpy(loop->handlers.entries[loop->handlers.size].key, key); 
+    loop->handlers.entries[loop->handlers.size].handlerfn = fn;
+    loop->handlers.size++;
+}
+
+void dispatch(EventLoop *loop, Event *event) {
+    pushback(&loop->events, event);
+}
+
+int main() {
     return 0;
 }
